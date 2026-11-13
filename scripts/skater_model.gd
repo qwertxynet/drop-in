@@ -5,9 +5,32 @@ extends Node3D
 
 const Build = preload("res://scripts/build.gd")
 
-const SKATER_SCENE := "res://assets/skater/skater.glb"
+## The CC Toon skater is built locally (it cannot be committed, see README);
+## the MPFB skater in the repository is the fallback.
+const CC_SKATER := "res://assets/skater_cc/skater.glb"
+const MPFB_SKATER := "res://assets/skater/skater.glb"
 const BODY_Y := 0.12   # top of the deck
-const REST_ARM_DEG := 45.0   # how far the arms sit from hanging in the rest pose
+
+## Pose bone names per rig, keyed by the names the pose code uses.
+const MPFB_BONES := {
+	"spine_01": "spine_01", "spine_02": "spine_02", "spine_03": "spine_03",
+	"neck": "neck_01", "head": "head",
+	"clavicle_l": "clavicle_l", "upperarm_l": "upperarm_l", "lowerarm_l": "lowerarm_l", "hand_l": "hand_l",
+	"clavicle_r": "clavicle_r", "upperarm_r": "upperarm_r", "lowerarm_r": "lowerarm_r", "hand_r": "hand_r",
+	"thigh_l": "thigh_l", "calf_l": "calf_l", "foot_l": "foot_l", "ball_l": "ball_l",
+	"thigh_r": "thigh_r", "calf_r": "calf_r", "foot_r": "foot_r", "ball_r": "ball_r",
+}
+const CC_BONES := {
+	"spine_01": "CC_Base_Waist", "spine_02": "CC_Base_Spine01", "spine_03": "CC_Base_Spine02",
+	"neck": "CC_Base_NeckTwist01", "head": "CC_Base_Head",
+	"clavicle_l": "CC_Base_L_Clavicle", "upperarm_l": "CC_Base_L_Upperarm", "lowerarm_l": "CC_Base_L_Forearm", "hand_l": "CC_Base_L_Hand",
+	"clavicle_r": "CC_Base_R_Clavicle", "upperarm_r": "CC_Base_R_Upperarm", "lowerarm_r": "CC_Base_R_Forearm", "hand_r": "CC_Base_R_Hand",
+	"thigh_l": "CC_Base_L_Thigh", "calf_l": "CC_Base_L_Calf", "foot_l": "CC_Base_L_Foot", "ball_l": "CC_Base_L_ToeBase",
+	"thigh_r": "CC_Base_R_Thigh", "calf_r": "CC_Base_R_Calf", "foot_r": "CC_Base_R_Foot", "ball_r": "CC_Base_R_ToeBase",
+}
+
+var _bones: Dictionary = MPFB_BONES
+var _rest_arm_deg := 45.0   # how far the arms sit from hanging in the rest pose
 
 ## Pose targets, set by whoever is driving the skater.
 var lean := 0.0        # -1 right .. 1 left
@@ -62,20 +85,43 @@ func _build() -> void:
 	_body.rotation_degrees.y = 100.0
 	_tilt.add_child(_body)
 
-	var scene: PackedScene = load(SKATER_SCENE)
+	var use_cc := ResourceLoader.exists(CC_SKATER)
+	var scene: PackedScene = load(CC_SKATER if use_cc else MPFB_SKATER)
 	_figure = scene.instantiate()
 	_body.add_child(_figure)
 	var skeletons := _figure.find_children("*", "Skeleton3D", true, false)
 	if not skeletons.is_empty():
 		_skel = skeletons[0]
-		_foot_rest_y = _skel.get_bone_global_rest(_skel.find_bone("foot_l")).origin.y
-	# Swap the imported materials for cel-shaded ones in the same colours.
+		if _skel.find_bone("CC_Base_Hip") >= 0:
+			_bones = CC_BONES
+			_rest_arm_deg = 60.0
+		_foot_rest_y = _figure_point(_skel.get_bone_global_rest(_bone("foot_l")).origin).y
+	# Swap the imported materials for cel-shaded ones, keeping colour textures.
 	for node in _figure.find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = node
 		for s in mi.mesh.get_surface_count():
 			var source := mi.mesh.surface_get_material(s) as BaseMaterial3D
 			var color := source.albedo_color if source != null else Color(0.5, 0.5, 0.5)
-			mi.set_surface_override_material(s, Build.mat(color))
+			if source != null and source.albedo_texture != null:
+				mi.set_surface_override_material(s, Build.mat_tex(color, source.albedo_texture))
+			else:
+				mi.set_surface_override_material(s, Build.mat(color))
+
+
+func _bone(key: String) -> int:
+	return _skel.find_bone(_bones.get(key, key))
+
+
+## A point in skeleton space, expressed in the figure's own space. Works before
+## the node enters the tree, and copes with scaled imports (CC rigs are in cm).
+func _figure_point(p: Vector3) -> Vector3:
+	var t := Transform3D.IDENTITY
+	var n: Node = _skel
+	while n != null and n != _figure:
+		if n is Node3D:
+			t = (n as Node3D).transform * t
+		n = n.get_parent()
+	return t * p
 
 
 func _process(dt: float) -> void:
@@ -95,7 +141,7 @@ func _process(dt: float) -> void:
 ## Sets a bone's orientation as a rotation of its rest pose, expressed in the
 ## skeleton's own space (X side, Y up, Z the way the figure faces).
 func _turn(bone: String, rotation: Basis) -> void:
-	var i := _skel.find_bone(bone)
+	var i := _bone(bone)
 	if i < 0:
 		return
 	var parent := _skel.get_bone_parent(i)
@@ -113,9 +159,9 @@ func _pose(c: float, arm_deg: float) -> void:
 	_turn("spine_02", Basis(Vector3.RIGHT, fold * 0.8))
 	_turn("spine_03", Basis(Vector3.RIGHT, fold))
 	# Head looks along the board, towards the direction of travel.
-	_turn("neck_01", Basis(Vector3.UP, deg_to_rad(30.0)))
+	_turn("neck", Basis(Vector3.UP, deg_to_rad(30.0)))
 	_turn("head", Basis(Vector3.UP, deg_to_rad(70.0)))
-	var arm := deg_to_rad(arm_deg - REST_ARM_DEG)
+	var arm := deg_to_rad(arm_deg - _rest_arm_deg)
 	for side in [["_l", 1.0], ["_r", -1.0]]:
 		var suffix: String = side[0]
 		var sign: float = side[1]
@@ -131,7 +177,7 @@ func _pose(c: float, arm_deg: float) -> void:
 		_turn("foot" + suffix, Basis.IDENTITY)
 		_turn("ball" + suffix, Basis.IDENTITY)
 	# Bending the legs lifts the feet; drop the figure so they stay on the deck.
-	var foot_y := _skel.get_bone_global_pose(_skel.find_bone("foot_l")).origin.y
+	var foot_y := _figure_point(_skel.get_bone_global_pose(_bone("foot_l")).origin).y
 	_figure.position.y = _foot_rest_y - foot_y
 
 

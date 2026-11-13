@@ -37,6 +37,34 @@ void fragment() {
 	return m
 
 
+static var _toon_tex_shader: Shader
+
+
+## Cel-shaded material with a colour texture. Texture alpha cuts out (for
+## eyebrows and lashes) rather than blending.
+static func mat_tex(color: Color, texture: Texture2D) -> Material:
+	if _toon_tex_shader == null:
+		_toon_tex_shader = Shader.new()
+		_toon_tex_shader.code = """
+shader_type spatial;
+render_mode specular_disabled, cull_disabled;
+uniform vec4 albedo : source_color = vec4(1.0);
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
+void fragment() {
+	vec4 t = texture(albedo_tex, UV);
+	ALBEDO = albedo.rgb * t.rgb;
+	ALPHA = t.a * albedo.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	ROUGHNESS = 1.0;
+}
+""" + TOON_LIGHT
+	var m := ShaderMaterial.new()
+	m.shader = _toon_tex_shader
+	m.set_shader_parameter("albedo", color)
+	m.set_shader_parameter("albedo_tex", texture)
+	return m
+
+
 ## Full-screen ink outlines, drawn where depth or surface direction changes
 ## sharply. Attach once per camera.
 static func add_outline(camera: Camera3D, line_color: Color = Color(0.03, 0.02, 0.05)) -> void:

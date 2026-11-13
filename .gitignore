@@ -3,3 +3,8 @@
 
 # Blender backups
 *.blend1
+
+# Reallusion CC base and anything built from it: licence forbids redistribution
+/CC Character Base/
+/assets/skater_cc/
+

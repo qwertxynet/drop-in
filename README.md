@@ -61,6 +61,21 @@ blender --background --python tools/make_skater.py
 Body proportions, colours and clothing fit are named values near the top of
 the script. Characters produced with MPFB are CC0.
 
+### Toon skater (local only)
+
+The preferred skater is built from Reallusion's free
+[CC Character Base](https://www.reallusion.com/character-creator/free-3d-character-base.html)
+(Toon Neutral M). Reallusion's licence forbids redistributing the base or
+models made from it, so neither is in this repository:
+
+1. Download the CC Character Base (free Reallusion account) and unzip it to
+   `CC Character Base/` in the project root.
+2. Run `blender --background --python tools/make_skater_cc.py`.
+3. Open the project in Godot so it imports `assets/skater_cc/`.
+
+The game uses this skater when `assets/skater_cc/skater.glb` exists, and
+falls back to the MPFB skater otherwise. Both folders are git-ignored.
+
 ## Testing hooks
 
 `main.gd` accepts arguments after `--` for scripted runs:
